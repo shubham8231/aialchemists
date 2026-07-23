@@ -6,7 +6,7 @@ variable "project_id" {
 variable "region" {
   description = "Deployment Region"
   type        = string
-  default     = "us-central1"
+  default     = "asia-south1"
 }
 
 variable "service_account_name" {
