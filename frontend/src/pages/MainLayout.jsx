@@ -75,7 +75,7 @@ const MainLayout = ({ children }) => {
           onClick={() => navigate("/dashboard")}
           sx={{ cursor: "pointer", fontSize: "0.85rem" }}
         >
-          AlchemistAI
+          OpsBeacon
         </MuiLink>
         {pathnames.map((value, index) => {
           const last = index === pathnames.length - 1;
@@ -118,7 +118,7 @@ const MainLayout = ({ children }) => {
             color: "text.primary",
           }}
         >
-          Alchemist<span style={{ fontWeight: 300 }}>AI</span>
+          OpsBeacon
         </Typography>
       </Toolbar>
       <Divider sx={{ opacity: 0.6 }} />
