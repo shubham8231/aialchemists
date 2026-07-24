@@ -1,0 +1,191 @@
+package com.monitoring.service;
+
+import com.monitoring.entity.IncidentDetails;
+import com.monitoring.entity.IncidentRca;
+import com.monitoring.repository.IncidentDetailsRepository;
+import com.monitoring.repository.IncidentRcaRepository;
+import com.monitoring.dto.ErrorTypesSummaryDTO;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.*;
+import java.util.stream.Collectors;
+
+@Service
+public class IncidentAnalysisService {
+    private static final Logger logger = LoggerFactory.getLogger(IncidentAnalysisService.class);
+    
+    @Autowired
+    private IncidentDetailsRepository incidentDetailsRepository;
+    
+    @Autowired
+    private IncidentRcaRepository incidentRcaRepository;
+
+    public List<ErrorTypesSummaryDTO> getAllErrorTypes() {
+        List<String> errorTypes = incidentDetailsRepository.findAllErrorTypes();
+        return errorTypes.stream()
+                .map(errorType -> {
+                    Long count = incidentDetailsRepository.countByErrorType(errorType);
+                    String description = getErrorTypeDescription(errorType);
+                    ErrorTypesSummaryDTO dto = new ErrorTypesSummaryDTO(errorType, count, description);
+                    
+                    List<String> recentIncidents = incidentDetailsRepository
+                            .findByErrorType(errorType).stream()
+                            .limit(5)
+                            .map(IncidentDetails::getIncidentNo)
+                            .collect(Collectors.toList());
+                    
+                    dto.setRecentIncidents(recentIncidents);
+                    return dto;
+                })
+                .collect(Collectors.toList());
+    }
+
+    public List<IncidentDetails> analyzeErrorType(String errorType) {
+        return incidentDetailsRepository.findByErrorType(errorType);
+    }
+
+    public Map<String, Object> getDetailedRCA(String incidentNo) {
+        Map<String, Object> result = new HashMap<>();
+        
+        Optional<IncidentDetails> incidentOpt = incidentDetailsRepository.findById(incidentNo);
+        if (incidentOpt.isPresent()) {
+            IncidentDetails incident = incidentOpt.get();
+            result.put("incident", incident);
+            
+            if (incident.getRcaId() != null) {
+                Optional<IncidentRca> rcaOpt = incidentRcaRepository.findById(incident.getRcaId());
+                rcaOpt.ifPresent(rca -> result.put("rca", rca));
+            }
+            
+            result.put("similarIncidents", findSimilarIncidents(incident));
+        }
+        
+        return result;
+    }
+
+    public Map<String, Object> analyzeIncident(String incidentNo) {
+        Map<String, Object> analysis = new HashMap<>();
+        
+        Optional<IncidentDetails> incidentOpt = incidentDetailsRepository.findById(incidentNo);
+        if (incidentOpt.isPresent()) {
+            IncidentDetails incident = incidentOpt.get();
+            analysis.put("incidentNo", incident.getIncidentNo());
+            analysis.put("errorType", incident.getErrorType());
+            analysis.put("severity", incident.getSeverity());
+            analysis.put("status", incident.getStatus());
+            
+            List<IncidentDetails> similar = findSimilarIncidents(incident);
+            analysis.put("similarCount", similar.size());
+            analysis.put("occurrenceFrequency", similar.size());
+        }
+        
+        return analysis;
+    }
+
+    public Map<String, Object> getResolutionRecommendation(String incidentNo) {
+        Map<String, Object> recommendation = new HashMap<>();
+        
+        logger.debug("Getting resolution recommendation for incident: {}", incidentNo);
+        Optional<IncidentDetails> incidentOpt = incidentDetailsRepository.findById(incidentNo);
+        
+        if (incidentOpt.isPresent()) {
+            IncidentDetails incident = incidentOpt.get();
+            logger.debug("Found incident: {}, rcaId: {}", incidentNo, incident.getRcaId());
+            
+            if (incident.getRcaId() != null) {
+                logger.debug("Looking up RCA with ID: {}", incident.getRcaId());
+                Optional<IncidentRca> rcaOpt = incidentRcaRepository.findById(incident.getRcaId());
+                
+                if (rcaOpt.isPresent()) {
+                    IncidentRca rca = rcaOpt.get();
+                    recommendation.put("isResolved", rca.getIsResolved());
+                    
+                    if (rca.getIsResolved()) {
+                        recommendation.put("status", "RESOLVED");
+                        recommendation.put("recommendations", rca.getResolutionSteps());
+                        recommendation.put("referenceIncident", incidentNo);
+                    } else {
+                        recommendation.put("status", "UNRESOLVED");
+                        recommendation.put("nextStep", "CODE_ANALYSIS");
+                        recommendation.put("codeRepository", rca.getCodeRepositoryUrl());
+                        recommendation.put("affectedFiles", rca.getAffectedCodeFile());
+                        recommendation.put("suggestedFix", rca.getFixSuggestion());
+                    }
+                } else {
+                    logger.warn("RCA not found for ID: {}", incident.getRcaId());
+                    recommendation.put("error", "RCA record not found for ID: " + incident.getRcaId());
+                }
+            } else {
+                logger.warn("Incident {} has no RCA ID", incidentNo);
+                recommendation.put("error", "No RCA ID associated with incident");
+            }
+        } else {
+            logger.warn("Incident not found: {}", incidentNo);
+            recommendation.put("error", "Incident not found: " + incidentNo);
+        }
+        
+        return recommendation;
+    }
+
+    public Map<String, Object> handleInteractiveWorkflow(String action, String errorType, String incidentNo) {
+        Map<String, Object> response = new HashMap<>();
+        
+        switch (action.toUpperCase()) {
+            case "LIST_ERROR_TYPES":
+                response.put("errorTypes", getAllErrorTypes());
+                response.put("nextAction", "SELECT_ERROR_TYPE");
+                break;
+                
+            case "GET_ERROR_INCIDENTS":
+                List<IncidentDetails> incidents = analyzeErrorType(errorType);
+                response.put("incidents", incidents);
+                response.put("count", incidents.size());
+                response.put("nextAction", "SELECT_INCIDENT");
+                break;
+                
+            case "ANALYZE_INCIDENT":
+                response.putAll(analyzeIncident(incidentNo));
+                response.put("nextAction", "RESOLUTION_RECOMMENDATION");
+                break;
+                
+            case "GET_RECOMMENDATION":
+                response.putAll(getResolutionRecommendation(incidentNo));
+                break;
+                
+            default:
+                response.put("error", "Invalid action");
+        }
+        
+        return response;
+    }
+
+    private List<IncidentDetails> findSimilarIncidents(IncidentDetails incident) {
+        return incidentDetailsRepository.findByErrorType(incident.getErrorType()).stream()
+                .filter(i -> !i.getIncidentNo().equals(incident.getIncidentNo()))
+                .limit(5)
+                .collect(Collectors.toList());
+    }
+
+    private String getErrorTypeDescription(String errorType) {
+        Map<String, String> descriptions = new HashMap<>();
+        descriptions.put("NULL_POINTER", "Null Pointer Exception - Occurs when accessing members of null object");
+        descriptions.put("LDAP_EXCEPTION", "LDAP Exception - Directory service connection or authentication failure");
+        descriptions.put("DB_TIMEOUT", "Database Timeout - Query execution exceeded time limit");
+        descriptions.put("CONNECTION_POOL_EXHAUSTED", "Connection Pool Exhausted - No available database connections");
+        descriptions.put("TRANSACTION_DECLINED", "Transaction Declined - Payment or transaction processing failed");
+        descriptions.put("POSTGRES_ERROR", "PostgreSQL Error - Database specific error from PostgreSQL");
+        
+        return descriptions.getOrDefault(errorType, "Unknown error type");
+    }
+
+    public Optional<IncidentDetails> getIncidentDetails(String incidentNo) {
+        return incidentDetailsRepository.findById(incidentNo);
+    }
+
+    public Optional<IncidentRca> getRcaById(String rcaId) {
+        return incidentRcaRepository.findById(rcaId);
+    }
+}

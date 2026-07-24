@@ -1,0 +1,47 @@
+package com.monitoring.service;
+
+import com.monitoring.LogEntry;
+import com.monitoring.LogParser;
+import com.monitoring.LogIndex;
+import com.monitoring.OpenAiGenerator;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.*;
+import java.util.*;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
+
+@Service
+public class LogRagService {
+    private final LogParser parser; private final LogIndex index; private final OpenAiGenerator generator; private final Path watchDirectory;
+    LogRagService(LogParser parser, LogIndex index, OpenAiGenerator generator, @Value("${log-rag.watch-directory:./logs}") String directory) throws IOException {
+        this.parser = parser; this.index = index; this.generator = generator; this.watchDirectory = Paths.get(directory); Files.createDirectories(watchDirectory);
+    }
+    public IngestResult ingest(String filename, List<String> lines) {
+        int added = index.addAll(parser.parse(filename, lines)); return new IngestResult(filename, added, index.size());
+    }
+    public IngestResult upload(MultipartFile file) throws IOException {
+        String name = Optional.ofNullable(file.getOriginalFilename()).orElse("uploaded.log");
+        return ingest(name, Arrays.asList(new String(file.getBytes(), StandardCharsets.UTF_8).split("\\R", -1)));
+    }
+    @Scheduled(fixedDelayString = "${log-rag.scan-interval-ms:30000}")
+    public void scanDirectory() {
+        try (var paths = Files.list(watchDirectory)) {
+            paths.filter(Files::isRegularFile).filter(p -> p.getFileName().toString().matches("(?i).*\\.(log|txt|json)$"))
+                .forEach(p -> { try { ingest(p.getFileName().toString(), Files.readAllLines(p)); } catch (IOException ignored) { } });
+        } catch (IOException ignored) { }
+    }
+    public QueryResult query(String question, String service, String level, int topK) {
+        List<LogIndex.SearchHit> hits = index.search(question, service, level, topK);
+        String answer = generator.answer(question, hits);
+        if (answer == null) answer = hits.isEmpty() ? "No matching indexed log event was found." : "Generation is disabled. Configure OPENAI_API_KEY to synthesize an answer; matching evidence is returned below.";
+        return new QueryResult(answer, hits, generator.enabled());
+    }
+    public int indexSize() {
+        return index.size();
+    }
+    public record IngestResult(String source, int added, int indexedTotal) { }
+    public record QueryResult(String answer, List<LogIndex.SearchHit> evidence, boolean generated) { }
+}

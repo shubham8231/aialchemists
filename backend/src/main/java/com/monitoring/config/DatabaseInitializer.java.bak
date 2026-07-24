@@ -1,0 +1,180 @@
+package com.monitoring.config;
+
+import com.monitoring.entity.IncidentDetails;
+import com.monitoring.entity.IncidentRca;
+import com.monitoring.repository.IncidentDetailsRepository;
+import com.monitoring.repository.IncidentRcaRepository;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.CommandLineRunner;
+import org.springframework.stereotype.Component;
+
+import java.time.LocalDateTime;
+
+@Component
+public class DatabaseInitializer implements CommandLineRunner {
+    
+    @Autowired
+    private IncidentDetailsRepository incidentDetailsRepository;
+    
+    @Autowired
+    private IncidentRcaRepository incidentRcaRepository;
+
+    @Override
+    public void run(String... args) throws Exception {
+        if (incidentDetailsRepository.count() == 0) {
+            initializeSampleIncidents();
+        }
+    }
+
+    private void initializeSampleIncidents() {
+        // Null Pointer Exception incidents
+        IncidentDetails inc1 = new IncidentDetails();
+        inc1.setIncidentNo("INC-001");
+        inc1.setApplicationName("AuthService");
+        inc1.setEnvironment("PROD");
+        inc1.setErrorType("NULL_POINTER");
+        inc1.setSeverity("HIGH");
+        inc1.setStatus("OPEN");
+        inc1.setDescription("NPE when parsing user profile");
+        inc1.setRawLog("java.lang.NullPointerException: Cannot invoke method on null object at com.auth.UserProfile.getName()");
+        inc1.setCreatedBy("system");
+        inc1.setAcknowledgementStatus(false);
+        incidentDetailsRepository.save(inc1);
+
+        IncidentRca rca1 = new IncidentRca();
+        rca1.setRcaId("1");
+        rca1.setIncidentNo("INC-001");
+        rca1.setRootCauseAnalysis("User object was not properly initialized before method call");
+        rca1.setResolutionSteps("Add null check before accessing user object properties");
+        rca1.setIsResolved(true);
+        rca1.setCodeChangeRequired("YES");
+        rca1.setCodeRepositoryUrl("https://github.com/company/auth-service");
+        rca1.setAffectedCodeFile("src/main/java/com/auth/UserProfile.java");
+        rca1.setFixSuggestion("if (user != null) { String name = user.getName(); }");
+        rca1.setConfidenceScore(0.95);
+        rca1.setSimilarIncidentCount(3);
+        rca1.setCreatedBy("system");
+        incidentRcaRepository.save(rca1);
+        inc1.setRcaId("1");
+        incidentDetailsRepository.save(inc1);
+
+        // LDAP Exception incidents
+        IncidentDetails inc2 = new IncidentDetails();
+        inc2.setIncidentNo("INC-002");
+        inc2.setApplicationName("DirectoryService");
+        inc2.setEnvironment("PROD");
+        inc2.setErrorType("LDAP_EXCEPTION");
+        inc2.setSeverity("CRITICAL");
+        inc2.setStatus("OPEN");
+        inc2.setDescription("LDAP connection timeout");
+        inc2.setRawLog("javax.naming.CommunicationException: Timeout trying to ldap://directory.company.com:389");
+        inc2.setCreatedBy("system");
+        inc2.setAcknowledgementStatus(false);
+        incidentDetailsRepository.save(inc2);
+
+        IncidentRca rca2 = new IncidentRca();
+        rca2.setRcaId("2");
+        rca2.setIncidentNo("INC-002");
+        rca2.setRootCauseAnalysis("LDAP server unreachable due to network connectivity issues");
+        rca2.setResolutionSteps("Check LDAP server connectivity and firewall rules");
+        rca2.setIsResolved(false);
+        rca2.setCodeChangeRequired("NO");
+        rca2.setConfidenceScore(0.85);
+        rca2.setSimilarIncidentCount(5);
+        rca2.setCreatedBy("system");
+        incidentRcaRepository.save(rca2);
+        inc2.setRcaId("2");
+        incidentDetailsRepository.save(inc2);
+
+        // DB Timeout incidents
+        IncidentDetails inc3 = new IncidentDetails();
+        inc3.setIncidentNo("INC-003");
+        inc3.setApplicationName("OrderService");
+        inc3.setEnvironment("PROD");
+        inc3.setErrorType("DB_TIMEOUT");
+        inc3.setSeverity("HIGH");
+        inc3.setStatus("OPEN");
+        inc3.setDescription("Database query timeout");
+        inc3.setRawLog("java.sql.SQLException: ORA-01013: user requested cancel of current operation timeout after 30000ms");
+        inc3.setCreatedBy("system");
+        inc3.setAcknowledgementStatus(false);
+        incidentDetailsRepository.save(inc3);
+
+        IncidentRca rca3 = new IncidentRca();
+        rca3.setRcaId("3");
+        rca3.setIncidentNo("INC-003");
+        rca3.setRootCauseAnalysis("Complex JOIN query without proper indexing on DB");
+        rca3.setResolutionSteps("Add index on frequently joined columns");
+        rca3.setIsResolved(true);
+        rca3.setCodeChangeRequired("YES");
+        rca3.setCodeRepositoryUrl("https://github.com/company/order-service");
+        rca3.setAffectedCodeFile("src/main/resources/queries/getOrders.sql");
+        rca3.setFixSuggestion("CREATE INDEX idx_orders_customer ON orders(customer_id);");
+        rca3.setConfidenceScore(0.92);
+        rca3.setSimilarIncidentCount(2);
+        rca3.setCreatedBy("system");
+        incidentRcaRepository.save(rca3);
+        inc3.setRcaId("3");
+        incidentDetailsRepository.save(inc3);
+
+        // Connection Pool Exhausted
+        IncidentDetails inc4 = new IncidentDetails();
+        inc4.setIncidentNo("INC-004");
+        inc4.setApplicationName("PaymentService");
+        inc4.setEnvironment("PROD");
+        inc4.setErrorType("CONNECTION_POOL_EXHAUSTED");
+        inc4.setSeverity("CRITICAL");
+        inc4.setStatus("RESOLVED");
+        inc4.setDescription("No available database connections");
+        inc4.setRawLog("java.sql.SQLException: Cannot get JDBC Connection; nested exception is: java.util.NoSuchElementException: Timeout waiting for idle object");
+        inc4.setCreatedBy("system");
+        inc4.setAcknowledgementStatus(true);
+        incidentDetailsRepository.save(inc4);
+
+        IncidentRca rca4 = new IncidentRca();
+        rca4.setRcaId("4");
+        rca4.setIncidentNo("INC-004");
+        rca4.setRootCauseAnalysis("Connection pool size too small for traffic volume");
+        rca4.setResolutionSteps("Increased max pool size from 20 to 50");
+        rca4.setIsResolved(true);
+        rca4.setTimeToResolve(45);
+        rca4.setCodeChangeRequired("YES");
+        rca4.setCodeRepositoryUrl("https://github.com/company/payment-service");
+        rca4.setAffectedCodeFile("src/main/resources/application.properties");
+        rca4.setFixSuggestion("spring.datasource.hikari.maximum-pool-size=50");
+        rca4.setConfidenceScore(0.99);
+        rca4.setSimilarIncidentCount(7);
+        rca4.setCreatedBy("system");
+        incidentRcaRepository.save(rca4);
+        inc4.setRcaId("4");
+        incidentDetailsRepository.save(inc4);
+
+        // Transaction Declined
+        IncidentDetails inc5 = new IncidentDetails();
+        inc5.setIncidentNo("INC-005");
+        inc5.setApplicationName("PaymentGateway");
+        inc5.setEnvironment("PROD");
+        inc5.setErrorType("TRANSACTION_DECLINED");
+        inc5.setSeverity("HIGH");
+        inc5.setStatus("OPEN");
+        inc5.setDescription("Payment transaction declined by gateway");
+        inc5.setRawLog("com.payment.GatewayException: Transaction declined - Code: 402 - Insufficient funds");
+        inc5.setCreatedBy("system");
+        inc5.setAcknowledgementStatus(false);
+        incidentDetailsRepository.save(inc5);
+
+        IncidentRca rca5 = new IncidentRca();
+        rca5.setRcaId("5");
+        rca5.setIncidentNo("INC-005");
+        rca5.setRootCauseAnalysis("Insufficient balance in customer account");
+        rca5.setResolutionSteps("Customer needs to top-up account balance before transaction");
+        rca5.setIsResolved(false);
+        rca5.setCodeChangeRequired("NO");
+        rca5.setConfidenceScore(1.0);
+        rca5.setSimilarIncidentCount(15);
+        rca5.setCreatedBy("system");
+        incidentRcaRepository.save(rca5);
+        inc5.setRcaId("5");
+        incidentDetailsRepository.save(inc5);
+    }
+}
